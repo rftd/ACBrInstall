@@ -369,6 +369,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn fastreport_uses_only_user_sources_or_registered_links_and_checks_before_building() {
+        use std::os::unix::fs::PermissionsExt;
         use std::sync::{Arc, Mutex};
         let root = std::env::temp_dir().join(format!(
             "fastreport-{}-{}",
@@ -389,25 +390,31 @@ mod tests {
         let pcp = root.join("config");
         fs::create_dir_all(&sources).unwrap();
         fs::create_dir_all(&pcp).unwrap();
+        // Linux and macOS do not place `true`/`false` in the same directory.
+        // Own fixtures also prove the failure comes from lazbuild's exit code,
+        // rather than from a missing executable on the runner.
+        let executable = |name: &str, exit_code: u8| {
+            let path = root.join(name);
+            fs::write(&path, format!("#!/bin/sh\nexit {exit_code}\n")).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+        let success = executable("lazbuild-success", 0);
+        let failure = executable("lazbuild-failure", 23);
         let acbr = root.join("ACBrReport.lpk");
         fs::write(&acbr, r#"<CONFIG><Package><Name Value="ACBrReport"/><RequiredPkgs><Item1><PackageName Value="fr_lazarus"/></Item1></RequiredPkgs></Package></CONFIG>"#).unwrap();
         let log = Arc::new(Mutex::new(Vec::new()));
         let captured = log.clone();
         let ctx = Ctx::new(Arc::new(move |line| captured.lock().unwrap().push(line)));
-        let error = preparar_fastreport(&ctx, &pcp, Path::new("/bin/true"), &[acbr.clone()], None)
-            .unwrap_err();
+        let error = preparar_fastreport(&ctx, &pcp, &success, &[acbr.clone()], None).unwrap_err();
         assert!(format!("{error:#}").contains("não está registrado"));
         assert!(log.lock().unwrap().is_empty());
         // A saved path is harmless if no selected component requires FastReport.
-        assert!(preparar_fastreport(
-            &ctx,
-            &pcp,
-            Path::new("/bin/false"),
-            &[],
-            Some(Path::new("missing"))
-        )
-        .unwrap()
-        .is_empty());
+        assert!(
+            preparar_fastreport(&ctx, &pcp, &failure, &[], Some(Path::new("missing")))
+                .unwrap()
+                .is_empty()
+        );
         let runtime = sources.join("frxBase.lpk");
         let design = sources.join("fr_lazarus.lpk");
         fs::write(
@@ -416,14 +423,8 @@ mod tests {
         )
         .unwrap();
         fs::write(&design,r#"<CONFIG><Package><Name Value="fr_lazarus"/><Type Value="RunAndDesignTime"/><RequiredPkgs><Item1><PackageName Value="frxBase"/></Item1></RequiredPkgs></Package></CONFIG>"#).unwrap();
-        let result = preparar_fastreport(
-            &ctx,
-            &pcp,
-            Path::new("/bin/true"),
-            &[acbr.clone()],
-            Some(&sources),
-        )
-        .unwrap();
+        let result =
+            preparar_fastreport(&ctx, &pcp, &success, &[acbr.clone()], Some(&sources)).unwrap();
         assert_eq!(result, vec![design.clone()]);
         let calls: Vec<String> = log
             .lock()
@@ -441,10 +442,11 @@ mod tests {
         assert!(calls[2..].iter().all(|l| !l.contains("--add-package")));
         fs::write(pcp.join("packagefiles.xml"),format!(r#"<CONFIG><UserPkgLinks><Item1><Name Value="frxBase"/><Filename Value="{}"/></Item1><Item2><Name Value="fr_lazarus"/><Filename Value="{}"/></Item2></UserPkgLinks></CONFIG>"#,runtime.display(),design.display())).unwrap();
         assert_eq!(
-            preparar_fastreport(&ctx, &pcp, Path::new("/bin/true"), &[acbr.clone()], None).unwrap(),
+            preparar_fastreport(&ctx, &pcp, &success, &[acbr.clone()], None).unwrap(),
             vec![design]
         );
-        assert!(preparar_fastreport(&ctx, &pcp, Path::new("/bin/false"), &[acbr], None).is_err());
+        let error = preparar_fastreport(&ctx, &pcp, &failure, &[acbr], None).unwrap_err();
+        assert!(format!("{error:#}").contains("código 23"));
         assert!(!log.lock().unwrap().join("\n").contains("Baixando"));
     }
 
