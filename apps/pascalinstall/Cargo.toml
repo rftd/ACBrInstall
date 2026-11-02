@@ -1,0 +1,8 @@
+[package]
+name = "pascalinstall"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+install-core = { path = "../../crates/install-core" }
+install-ui = { path = "../../crates/install-ui" }

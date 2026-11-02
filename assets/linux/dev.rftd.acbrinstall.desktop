@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ACBrInstall
+Comment=Instalador de componentes ACBr para Delphi e Lazarus
+Exec=acbrinstall
+Icon=dev.rftd.acbrinstall
+Terminal=false
+Categories=Development;IDE;
+StartupWMClass=dev.rftd.acbrinstall
+X-RFTD-Installer=true

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=PascalInstall
+Comment=Instalador de Free Pascal e Lazarus
+Exec=pascalinstall
+Icon=dev.rftd.pascalinstall
+Terminal=false
+Categories=Development;IDE;
+StartupWMClass=dev.rftd.pascalinstall
+X-RFTD-Installer=true

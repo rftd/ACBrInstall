@@ -1,0 +1,9 @@
+/target
+/dist
+__pycache__/
+*.AppImage
+.venv-build/
+/defmods.ini
+/fpcup.ini
+/settings.ini
+/packagefiles.xml

@@ -1,0 +1,90 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build e testes (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x86_64
+            ext: .exe
+          - os: ubuntu-22.04
+            platform: linux-x86_64
+            ext: ''
+          - os: macos-15-intel
+            platform: macos-x86_64
+            ext: ''
+          - os: macos-15
+            platform: macos-aarch64
+            ext: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependências de build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+      - name: Testes do workspace
+        run: cargo test --workspace --locked
+      - name: Compilar os dois aplicativos
+        run: cargo build --workspace --release --locked
+      - name: Testar CLI e preparar os dois executáveis
+        shell: bash
+        run: |
+          mkdir -p dist
+          for app in acbrinstall pascalinstall; do
+            "./target/release/${app}${{ matrix.ext }}" --help
+            if [ "$app" = acbrinstall ]; then title=ACBrInstall; else title=PascalInstall; fi
+            cp "target/release/${app}${{ matrix.ext }}" "dist/${title}-${{ matrix.platform }}${{ matrix.ext }}"
+          done
+      - name: Gerar AppImages (Linux)
+        if: runner.os == 'Linux'
+        run: python3 scripts/package.py --platform '${{ matrix.platform }}'
+      - name: Gerar aplicativos e instaladores PKG (macOS)
+        if: runner.os == 'macOS'
+        run: python3 scripts/package.py --platform '${{ matrix.platform }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Anexar os instaladores à release
+    needs: build
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: dist/*
+          fail_on_unmatched_files: true
