@@ -49,12 +49,26 @@ jobs:
         run: cargo test --workspace --locked
       - name: Compilar os dois aplicativos
         run: cargo build --workspace --release --locked
+      - name: Conferir informações dos executáveis (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $metadata = cargo metadata --no-deps --format-version 1 --locked | ConvertFrom-Json
+          foreach ($app in @('acbrinstall', 'pascalinstall')) {
+            $package = $metadata.packages | Where-Object { $_.name -eq $app }
+            $info = (Get-Item "target/release/$app.exe").VersionInfo
+            $title = if ($app -eq 'acbrinstall') { 'ACBrInstall' } else { 'PascalInstall' }
+            if ($info.ProductVersion -ne $package.version -or $info.FileVersion -ne $package.version -or $info.ProductName -ne $title -or $info.FileDescription -ne $package.description -or $info.CompanyName -ne ($package.authors -join ':')) {
+              throw "Versão ou informações inválidas em $app.exe"
+            }
+          }
       - name: Testar CLI e preparar os dois executáveis
         shell: bash
         run: |
           mkdir -p dist
           for app in acbrinstall pascalinstall; do
             "./target/release/${app}${{ matrix.ext }}" --help
+            "./target/release/${app}${{ matrix.ext }}" --version
             if [ "$app" = acbrinstall ]; then title=ACBrInstall; else title=PascalInstall; fi
             cp "target/release/${app}${{ matrix.ext }}" "dist/${title}-${{ matrix.platform }}${{ matrix.ext }}"
           done

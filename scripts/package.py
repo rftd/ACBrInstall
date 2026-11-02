@@ -65,6 +65,9 @@ def appdir(app, title, binary, directory):
     icons.mkdir(parents=True)
     shutil.copy2(directory / f"{app_id}.desktop", applications)
     shutil.copy2(directory / f"{app_id}.png", icons)
+    license_dir = directory / "usr/share/licenses" / app
+    license_dir.mkdir(parents=True)
+    shutil.copy2(ROOT / "LICENSE", license_dir)
     (directory / ".DirIcon").symlink_to(f"{app_id}.png")
     (directory / "AppRun").write_text(
         '#!/bin/sh\nAPPDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\n'
@@ -72,10 +75,11 @@ def appdir(app, title, binary, directory):
     (directory / "AppRun").chmod(0o755)
 
 
-def mac_bundle(app, title, binary, directory, version, arch):
+def mac_bundle(app, title, binary, directory, version, arch, description="", copyright_notice=""):
     contents = directory / "Contents"
     (contents / "MacOS").mkdir(parents=True)
     (contents / "Resources").mkdir()
+    shutil.copy2(ROOT / "LICENSE", contents / "Resources")
     executable = contents / "MacOS" / app
     shutil.copy2(binary, executable)
     executable.chmod(0o755)
@@ -89,10 +93,11 @@ def mac_bundle(app, title, binary, directory, version, arch):
         "CFBundlePackageType": "APPL",
         "CFBundleShortVersionString": version,
         "CFBundleVersion": version,
+        "CFBundleGetInfoString": f"{title} {version} — {description}",
         "LSMinimumSystemVersion": "11.0",
         "LSArchitecturePriority": ["arm64" if arch == "aarch64" else "x86_64"],
         "NSHighResolutionCapable": True,
-        "NSHumanReadableCopyright": "ACBrInstall / PascalInstall contributors",
+        "NSHumanReadableCopyright": copyright_notice,
     }
     with (contents / "Info.plist").open("wb") as output:
         plistlib.dump(info, output)
@@ -113,9 +118,10 @@ def main():
             parser.error("Execute o empacotamento nativo no sistema de destino ou use --bundle-only.")
     metadata = json.loads(subprocess.check_output(
         ["cargo", "metadata", "--no-deps", "--format-version=1", "--offline"], cwd=ROOT))
-    version = next(p["version"] for p in metadata["packages"] if p["name"] == "acbrinstall")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for app, title in PRODUCTS.items():
+        package = next(p for p in metadata["packages"] if p["name"] == app)
+        version = package["version"]
         binary = args.binary_dir / app
         if not binary.is_file():
             parser.error(f"Executável não encontrado: {binary}")
@@ -134,7 +140,8 @@ def main():
                 artifact.chmod(0o755)
                 run(artifact, "--appimage-extract-and-run", "--help")
         else:
-            mac_bundle(app, title, binary, directory, version, args.platform.split("-")[1])
+            copyright_notice = f"Copyright (c) 2026 {', '.join(package['authors'])} — {package['license']}"
+            mac_bundle(app, title, binary, directory, version, args.platform.split("-")[1], package["description"] or "", copyright_notice)
             if not args.bundle_only:
                 run("plutil", "-lint", directory / "Contents/Info.plist")
                 # Ad-hoc signing supports native execution, including Apple Silicon.

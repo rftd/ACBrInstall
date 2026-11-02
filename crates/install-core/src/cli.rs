@@ -19,12 +19,12 @@ pub struct Options {
 }
 
 pub fn help(product: Product) -> String {
-    let common="Sem argumentos abre a interface gráfica.\n--cli               modo texto\n--dir <pasta>       ambiente Pascal/Lazarus\n-h, --help          mostra esta ajuda\n";
+    let common="Sem argumentos abre a interface gráfica.\n--cli               modo texto\n--dir <pasta>       ambiente Pascal/Lazarus\n-V, --version       mostra a versão\n-h, --help          mostra esta ajuda\n";
     let specific=match product {
         Product::Pascal => "--fpc <versão>      versão do FPC (stable por padrão)\n--laz <versão>      versão do Lazarus\n--cross <lista>     win32,win64,linux32,linux64 (vazio desativa)\n--configure-ide     instala OPM e designer no Lazarus existente, sem baixar FPC\n",
         Product::Acbr => "--ide <alvo>        lazarus ou delphi (Delphi somente Windows)\n--acbr-dir <pasta>  raiz dos fontes ACBr\n--acbr-action <ação> install, download ou update\n--acbr-packages <lista> nomes de pacotes separados por vírgula\n--all-acbr          todos os pacotes, incluindo FastReport\n--default-acbr      seleção padrão, sem FastReport\n--fastreport-dir <pasta> FastReport já adquirido (opcional)\n--list-components  lista os pacotes sem compilar\n--list-environments lista instalações detectadas\n--delphi-dir <pasta> raiz de uma instalação Delphi\n--delphi-key <chave> perfil HKCU\\Software\\Embarcadero\\BDS\\<versão>\n--win64            compila também bibliotecas Delphi Win64\n--debug            compila também bibliotecas Delphi Debug\n--ide64            instala componentes também na IDE Delphi de 64 bits\n",
     };
-    format!("{} — {}\n\nUso: {} --cli [opções]\n\n{common}{specific}\nAs últimas opções são restauradas do arquivo de configuração próprio.\n",product.title(),product.subtitle(),product.executable())
+    format!("{} {} — {}\n\nUso: {} --cli [opções]\n\n{common}{specific}\nAs últimas opções são restauradas do arquivo de configuração próprio.\n",product.title(),crate::VERSION,product.subtitle(),product.executable())
 }
 
 fn parse(
@@ -126,6 +126,10 @@ fn parse(
 }
 
 pub fn run(product: Product, args: &[String]) -> i32 {
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("{} {}", product.title(), crate::VERSION);
+        return 0;
+    }
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print!("{}", help(product));
         return 0;
@@ -156,7 +160,12 @@ fn execute(product: Product, args: &[String]) -> Result<()> {
     }
     let options = parse(product, args, acbr, pascal)?;
     let ctx = Ctx::new(Arc::new(|line| println!("{line}")));
-    match options.request {
+    let ctx = if options.list || options.environments {
+        ctx
+    } else {
+        ctx.with_session_log(product)
+    };
+    let result = (|| match options.request {
         Request::Pascal(cfg) => {
             if options.configure_only {
                 let path = config_store::save_pascal(&cfg)?;
@@ -224,7 +233,11 @@ fn execute(product: Product, args: &[String]) -> Result<()> {
             }
             crate::acbr::executar(&cfg, &ctx)
         }
+    })();
+    if let Err(error) = &result {
+        ctx.record_failure(&format!("{error:#}"));
     }
+    result
 }
 
 #[cfg(test)]

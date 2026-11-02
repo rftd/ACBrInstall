@@ -19,9 +19,61 @@ fn main() {
         .to_string_lossy()
         .trim_start_matches(r"\\?\")
         .replace('\\', "/");
+    let title = if product == "acbrinstall" {
+        "ACBrInstall"
+    } else {
+        "PascalInstall"
+    };
+    let escape = |value: String| value.replace('\\', "\\\\").replace('"', "\\\"");
+    let description = escape(env::var("CARGO_PKG_DESCRIPTION").unwrap_or_default());
+    let repository = escape(env::var("CARGO_PKG_REPOSITORY").unwrap_or_default());
+    let author = escape(env::var("CARGO_PKG_AUTHORS").unwrap_or_default());
+    let license = escape(env::var("CARGO_PKG_LICENSE").unwrap_or_default());
+    let version = env::var("CARGO_PKG_VERSION").unwrap();
+    let numbers = [
+        "CARGO_PKG_VERSION_MAJOR",
+        "CARGO_PKG_VERSION_MINOR",
+        "CARGO_PKG_VERSION_PATCH",
+    ]
+    .map(|name| env::var(name).unwrap())
+    .join(",")
+        + ",0";
     fs::write(
         &resource,
-        format!("#pragma code_page(65001)\n1 ICON \"{icon}\"\n"),
+        format!(
+            r#"#pragma code_page(65001)
+1 ICON "{icon}"
+1 VERSIONINFO
+FILEVERSION {numbers}
+PRODUCTVERSION {numbers}
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0x0L
+FILEOS 0x40004L
+FILETYPE 0x1L
+FILESUBTYPE 0x0L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "041604B0"
+    BEGIN
+      VALUE "CompanyName", "{author}\0"
+      VALUE "LegalCopyright", "Copyright (c) 2026 {author}\0"
+      VALUE "FileDescription", "{description}\0"
+      VALUE "FileVersion", "{version}\0"
+      VALUE "InternalName", "{product}\0"
+      VALUE "OriginalFilename", "{product}.exe\0"
+      VALUE "ProductName", "{title}\0"
+      VALUE "ProductVersion", "{version}\0"
+      VALUE "Comments", "{repository} - {license}\0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0416, 1200
+  END
+END
+"#
+        ),
     )
     .expect("writing icon resource");
     let result = output.join("app.res");

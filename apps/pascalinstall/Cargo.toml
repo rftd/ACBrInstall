@@ -2,6 +2,10 @@
 name = "pascalinstall"
 version.workspace = true
 edition.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Instalador de Free Pascal, Lazarus e compiladores"
 
 [dependencies]
 install-core = { path = "../../crates/install-core" }

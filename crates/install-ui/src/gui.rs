@@ -1,5 +1,6 @@
 use eframe::egui;
 mod acbr_wizard;
+mod log_export;
 use install_core::acbr as installer;
 use install_core::versions::Component;
 use install_core::{
@@ -511,6 +512,7 @@ struct App {
     page: Page,
     acbr_step: acbr_wizard::Step,
     theme: AppTheme,
+    about_open: bool,
     dir: String,
     fpc: String,
     laz: String,
@@ -530,6 +532,8 @@ struct App {
     package_family: Option<&'static str>,
     install_attempted: bool,
     log: Vec<String>,
+    log_path: Option<PathBuf>,
+    log_export: log_export::LogExport,
     status: String,
     running: bool,
     rx: Option<Receiver<Msg>>,
@@ -617,6 +621,7 @@ impl App {
             page: Page::Installation,
             acbr_step: acbr_wizard::Step::Welcome,
             theme,
+            about_open: false,
             dir: base.to_string_lossy().into_owned(),
             fpc: pascal.fpc,
             laz: pascal.laz,
@@ -650,6 +655,8 @@ impl App {
                 vec![warning.clone()]
             },
             status: warning,
+            log_path: None,
+            log_export: log_export::LogExport::default(),
             running: false,
             rx: None,
             ctx_run: None,
@@ -682,7 +689,9 @@ impl App {
         let ctx = Ctx::new(Arc::new(move |l: String| {
             let _ = tx_log.lock().unwrap().send(Msg::Line(l));
             c2.request_repaint();
-        }));
+        }))
+        .with_session_log(self.product);
+        self.log_path = ctx.log_path().map(PathBuf::from);
         self.ctx_run = Some(ctx.clone());
 
         let mut delphi = self.delphi.clone();
@@ -717,6 +726,9 @@ impl App {
                 Product::Pascal => install_core::pascal::executar(&pascal, &ctx),
             }
             .map_err(|e| format!("{e:#}"));
+            if let Err(error) = &r {
+                ctx.say(format!("ERRO: {error}"));
+            }
             let _ = tx.send(Msg::Done(r));
             egui_ctx.request_repaint();
         });
@@ -741,7 +753,9 @@ impl App {
         let ctx = Ctx::new(Arc::new(move |line| {
             let _ = tx_log.lock().unwrap().send(Msg::Line(line));
             c2.request_repaint();
-        }));
+        }))
+        .with_session_log(self.product);
+        self.log_path = ctx.log_path().map(PathBuf::from);
         self.ctx_run = Some(ctx.clone());
         let base = PathBuf::from(self.dir.trim());
         let destino = if self.acbr_dir.trim().is_empty() {
@@ -752,12 +766,19 @@ impl App {
         std::thread::spawn(move || {
             let result =
                 installer::baixar_fontes_acbr(&ctx, &base, &destino).map_err(|e| format!("{e:#}"));
+            if result.is_ok() {
+                ctx.say("Fontes disponíveis. Selecione os componentes para instalar.");
+            }
+            if let Err(error) = &result {
+                ctx.say(format!("ERRO: {error}"));
+            }
             let _ = tx.send(Msg::SourcesReady(result));
             egui_ctx.request_repaint();
         });
     }
 
     fn drenar(&mut self) {
+        self.log_export.poll();
         if let Some(rx) = &self.delphi_rx {
             if let Ok(result) = rx.try_recv() {
                 match result {
@@ -816,9 +837,8 @@ impl App {
                         self.finished_after = self.started_at.map(|start| start.elapsed());
                         self.inspection.invalidate(false, true);
                     }
-                    Msg::Done(Err(e)) | Msg::SourcesReady(Err(e)) => {
+                    Msg::Done(Err(_)) | Msg::SourcesReady(Err(_)) => {
                         self.running = false;
-                        self.log.push(format!("ERRO: {e}"));
                         self.status = if self.cancelling {
                             "Instalação cancelada."
                         } else {
@@ -882,12 +902,19 @@ impl App {
             ui.add(egui::Image::new(&self.logo).fit_to_exact_size(egui::vec2(40.0, 40.0)));
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
-                ui.label(
-                    egui::RichText::new(self.product.title())
-                        .size(22.0)
-                        .color(white)
-                        .strong(),
-                );
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(self.product.title())
+                            .size(22.0)
+                            .color(white)
+                            .strong(),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("v{}", install_core::VERSION))
+                            .small()
+                            .color(soft),
+                    );
+                });
                 ui.label(
                     egui::RichText::new(self.product.subtitle())
                         .size(12.0)
@@ -930,6 +957,16 @@ impl App {
                         ui.close_menu();
                     }
                 });
+                if ui
+                    .add(
+                        egui::Button::new(egui::RichText::new("Sobre").color(white))
+                            .fill(selected)
+                            .stroke(egui::Stroke::NONE),
+                    )
+                    .clicked()
+                {
+                    self.about_open = true;
+                }
                 ui.label(
                     egui::RichText::new(
                         format!("{} / {}", std::env::consts::OS, std::env::consts::ARCH)
@@ -1436,7 +1473,7 @@ impl App {
         });
     }
 
-    fn activity(&self, ui: &mut egui::Ui, height: f32) {
+    fn activity(&mut self, ui: &mut egui::Ui, height: f32) {
         let colors = Palette::of(ui);
         let height = height.max(340.0);
         card(ui, |ui| {
@@ -1448,6 +1485,8 @@ impl App {
                         .strong(),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    self.log_export
+                        .show(ui, self.log_path.as_deref(), &self.log, self.product);
                     if ui
                         .add_enabled(
                             !self.log.is_empty(),
@@ -1459,6 +1498,14 @@ impl App {
                     }
                 });
             });
+            self.log_export.status(ui);
+            if let Some(path) = &self.log_path {
+                ui.label(
+                    egui::RichText::new(format!("Log completo: {}", path.display()))
+                        .small()
+                        .color(colors.muted),
+                );
+            }
             let (label, color) = self.state_label();
             ui.horizontal(|ui| {
                 if self.running {
@@ -1579,6 +1626,53 @@ impl App {
             || self.acbr_picker.rx.is_some()
             || self.fastreport_picker.rx.is_some()
     }
+
+    fn about_dialog(&mut self, ctx: &egui::Context) {
+        if !self.about_open {
+            return;
+        }
+        let mut open = true;
+        let mut close = false;
+        let colors = Palette::new(self.theme.dark);
+        egui::Window::new(format!("Sobre o {}",self.product.title()))
+            .id(egui::Id::new("program_information"))
+            .open(&mut open).collapsible(false).resizable(false).default_width(440.0)
+            .anchor(egui::Align2::CENTER_CENTER,egui::Vec2::ZERO)
+            .show(ctx,|ui| {
+                ui.horizontal(|ui| {
+                    ui.add(egui::Image::new(&self.logo).fit_to_exact_size(egui::vec2(64.0,64.0)));
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new(self.product.title()).size(22.0).strong());
+                        ui.label(egui::RichText::new(format!("Versão {}",install_core::VERSION)).color(colors.accent));
+                    });
+                });
+                ui.add_space(12.0);
+                ui.label(self.product.subtitle());
+                ui.label(match self.product {
+                    Product::Acbr => "Lazarus: Linux, Windows e macOS. Delphi: somente Windows.",
+                    Product::Pascal => "FPC, Lazarus, cross-compilers, Online Package Manager e designer integrado.",
+                });
+                ui.add_space(12.0);
+                ui.label(format!("Autor: {}",install_core::AUTHORS));
+                ui.label(format!("Licença: {}",install_core::LICENSE));
+                ui.label(egui::RichText::new(format!("Sistema: {} / {}",std::env::consts::OS,std::env::consts::ARCH)).small().color(colors.muted));
+                ui.hyperlink_to("Código-fonte e informações do projeto",install_core::REPOSITORY);
+                if self.product==Product::Acbr {
+                    ui.label(egui::RichText::new("ACBr e seu ícone pertencem ao Projeto ACBr.").small().color(colors.muted));
+                }
+                egui::CollapsingHeader::new("Ver licença MIT").show(ui,|ui| {
+                    egui::ScrollArea::vertical().id_salt("license_text").max_height(180.0).show(ui,|ui| {
+                        ui.label(egui::RichText::new(install_core::LICENSE_TEXT).small());
+                    });
+                });
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Copiar informações").clicked() {ui.ctx().copy_text(self.product.information());}
+                    if ui.button("Fechar").clicked() {close=true;}
+                });
+            });
+        self.about_open = open && !close;
+    }
 }
 
 impl eframe::App for App {
@@ -1591,6 +1685,7 @@ impl eframe::App for App {
         }
         if self.product == Product::Acbr {
             self.acbr_wizard(ctx);
+            self.about_dialog(ctx);
             return;
         }
         let colors = Palette::new(self.theme.dark);
@@ -1692,6 +1787,7 @@ impl eframe::App for App {
                         .show(ui, |ui| self.configuration(ui));
                 }
             });
+        self.about_dialog(ctx);
     }
 }
 

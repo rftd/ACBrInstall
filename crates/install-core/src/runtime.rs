@@ -22,6 +22,7 @@ pub struct Ctx {
     log: Arc<dyn Fn(String) + Send + Sync>,
     cancel: Arc<AtomicBool>,
     child: Arc<Mutex<Option<Child>>>,
+    archive: Option<Arc<crate::logs::SessionLog>>,
 }
 
 impl Ctx {
@@ -30,6 +31,48 @@ impl Ctx {
             log,
             cancel: Arc::new(AtomicBool::new(false)),
             child: Arc::new(Mutex::new(None)),
+            archive: None,
+        }
+    }
+
+    pub fn with_session_log(mut self, product: crate::Product) -> Self {
+        match crate::logs::SessionLog::create(product) {
+            Ok(archive) => {
+                let archive = Arc::new(archive);
+                let saved = archive.clone();
+                let display = self.log.clone();
+                self.log = Arc::new(move |line| {
+                    if let Err(error) = saved.append(&line) {
+                        if saved.first_failure() {
+                            display(format!("AVISO: falha ao gravar log: {error}"));
+                        }
+                    }
+                    display(line);
+                });
+                self.archive = Some(archive);
+                self.say(format!(
+                    "Log da execução: {}",
+                    self.log_path().unwrap().display()
+                ));
+            }
+            Err(error) => self.say(format!(
+                "AVISO: não foi possível criar o arquivo de log: {error}"
+            )),
+        }
+        self
+    }
+
+    pub fn log_path(&self) -> Option<&Path> {
+        self.archive.as_ref().map(|log| log.path.as_path())
+    }
+
+    pub(crate) fn record_failure(&self, error: &str) {
+        if let Some(log) = &self.archive {
+            if let Err(error) = log.append(&format!("ERRO: {error}")) {
+                if log.first_failure() {
+                    self.say(format!("AVISO: falha ao gravar log: {error}"));
+                }
+            }
         }
     }
 

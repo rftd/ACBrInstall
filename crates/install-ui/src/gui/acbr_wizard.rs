@@ -660,7 +660,10 @@ impl App {
                 if ui.button("Copiar log").clicked() {
                     ui.ctx().copy_text(self.log.join("\n"));
                 }
+                self.log_export
+                    .show(ui, self.log_path.as_deref(), &self.log, self.product);
             });
+            self.log_export.status(ui);
         });
     }
 }

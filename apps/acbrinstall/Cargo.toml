@@ -2,6 +2,10 @@
 name = "acbrinstall"
 version.workspace = true
 edition.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Instalador de componentes ACBr para Delphi e Lazarus"
 
 [dependencies]
 install-core = { path = "../../crates/install-core" }

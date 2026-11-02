@@ -1,5 +1,15 @@
 # PascalInstall e ACBrInstall
 
+Versão atual dos dois aplicativos: **0.3.0**. O botão **Sobre** apresenta nome,
+versão, descrição, sistema/arquitetura e o repositório do projeto, com opção para
+copiar essas informações. Na CLI, use `acbrinstall --version` ou
+`pascalinstall --version`. A versão também é incluída nos metadados dos pacotes
+macOS e nas propriedades dos executáveis Windows.
+
+Autor: **Rafael Teno DIas**. Licença do código dos instaladores: **MIT** — veja
+[LICENSE](LICENSE). Componentes ACBr, dependências e ícones de terceiros mantêm
+suas respectivas licenças e atribuições.
+
 Dois programas independentes no mesmo workspace Rust:
 
 | Programa | Responsabilidade | Plataformas |
@@ -176,6 +186,26 @@ A cópia de DLLs, quando migrada, será exclusiva do Windows, inclusive para
 Lazarus nesse sistema. Linux e macOS não terão essa opção nem executarão essa etapa.
 
 ## Configurações
+
+### Logs de instalação
+
+Os dois aplicativos salvam automaticamente um arquivo completo por instalação,
+reparo ou download de fontes, tanto na interface quanto na CLI. O log inclui
+saída dos processos, mensagens de erro e informações da versão. O caminho aparece
+no acompanhamento; **Salvar log** permite exportar uma cópia, inclusive durante
+o build. Nesse caso, a cópia contém o conteúdo disponível naquele momento.
+
+| Sistema | Pasta dos logs |
+|---|---|
+| Linux | `~/.local/state/acbrinstall/logs` ou `~/.local/state/pascalinstall/logs` (`XDG_STATE_HOME` é respeitado) |
+| Windows | `%LOCALAPPDATA%\ACBrInstall\logs` ou `%LOCALAPPDATA%\PascalInstall\logs` |
+| macOS | `~/Library/Logs/ACBrInstall` ou `~/Library/Logs/PascalInstall` |
+
+A interface limita o histórico visível para manter a fluidez; o arquivo e sua
+exportação preservam o log completo. Ajuda, versão e listagens da CLI não criam
+logs. Se a pasta não puder ser gravada, a instalação continua com um aviso.
+
+### Últimas opções
 
 Cada programa salva as últimas opções ao iniciar seu build, inclusive se falhar:
 
