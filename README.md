@@ -1,283 +1,187 @@
-# PascalInstall e ACBrInstall
+<p align="center">
+  <img src="assets/acbrinstall.png" width="64" alt="ACBrInstall">
+  &nbsp;&nbsp;
+  <img src="assets/pascalinstall-256.png" width="64" alt="PascalInstall">
+</p>
 
-Versão atual dos dois aplicativos: **0.3.0**. O botão **Sobre** apresenta nome,
-versão, descrição, sistema/arquitetura e o repositório do projeto, com opção para
-copiar essas informações. Na CLI, use `acbrinstall --version` ou
-`pascalinstall --version`. A versão também é incluída nos metadados dos pacotes
-macOS e nas propriedades dos executáveis Windows.
+# ACBrInstall & PascalInstall
 
-Autor: **Rafael Teno DIas**. Licença do código dos instaladores: **MIT** — veja
-[LICENSE](LICENSE). Componentes ACBr, dependências e ícones de terceiros mantêm
-suas respectivas licenças e atribuições.
+Instaladores em Rust para ambientes Pascal e componentes ACBr, com interface gráfica e linha de comando.
 
-Dois programas independentes no mesmo workspace Rust:
+[![Build e testes](https://github.com/rftd/ACBrInstall/actions/workflows/build.yml/badge.svg)](https://github.com/rftd/ACBrInstall/actions/workflows/build.yml)
+[![Versão 0.3.0](https://img.shields.io/badge/vers%C3%A3o-0.3.0-blue)](https://github.com/rftd/ACBrInstall/releases)
+[![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green)](LICENSE)
 
-| Programa | Responsabilidade | Plataformas |
+| Aplicativo | Função | Plataformas |
 |---|---|---|
-| **PascalInstall** | Preparar FPC, Lazarus, cross-compilers, Online Package Manager e designer integrado | Linux, Windows e macOS (Intel/Apple Silicon) |
-| **ACBrInstall** | Baixar/atualizar fontes e instalar componentes ACBr em uma IDE existente | Lazarus: Linux/Windows/macOS. Delphi: somente Windows |
+| **ACBrInstall** | Baixar, atualizar e instalar componentes ACBr em uma IDE existente. | Lazarus: Linux, Windows e macOS. Delphi: somente Windows. |
+| **PascalInstall** | Preparar FPC, Lazarus, compiladores adicionais, Online Package Manager e designer integrado. | Linux, Windows e macOS. |
 
-O ACBrInstall não instala ou atualiza FPC/Lazarus. O PascalInstall não baixa,
-compila ou registra componentes ACBr. Downloads, processos, cancelamento, logs e
-persistência são compartilhados pela biblioteca `install-core`; tema, seletores
-de pasta e acompanhamento são compartilhados por `install-ui`.
+[Downloads](#downloads) · [Uso](#uso) · [Requisitos](#requisitos) · [CLI](#linha-de-comando) · [Desenvolvimento](#desenvolvimento)
 
-```text
-apps/
-  acbrinstall/       executável ACBrInstall
-  pascalinstall/     executável PascalInstall
-crates/
-  install-core/      infraestrutura e backends Pascal, ACBr/Lazarus e ACBr/Delphi
-  install-ui/        interface comum, com telas específicas de cada programa
-```
+## Downloads
 
-## Compilar e executar
+Os dois aplicativos estão disponíveis separadamente nas [Releases](https://github.com/rftd/ACBrInstall/releases):
 
-```bash
-cargo test --workspace
-cargo build --workspace --release
-cargo run -p pascalinstall
-cargo run -p acbrinstall
-```
+| Sistema | Arquitetura | Formatos |
+|---|---|---|
+| Linux | x86-64 | `.AppImage` e executável |
+| Windows | x86-64 | `.exe` |
+| macOS | Intel e Apple Silicon, em builds separados | `.pkg`, `.app.zip` e executável |
 
-Os executáveis são `target/release/pascalinstall` e
-`target/release/acbrinstall` (com `.exe` no Windows). Sem argumentos, cada um abre
-sua própria interface. Argumentos usam a CLI, que também aceita `--cli`.
+Os arquivos incluem o nome do aplicativo e a plataforma, como `ACBrInstall-linux-x86_64.AppImage`. Builds de desenvolvimento ficam nos artefatos do [GitHub Actions](https://github.com/rftd/ACBrInstall/actions/workflows/build.yml).
 
-As interfaces abrem seguindo o tema do sistema. No Linux, consultam a preferência
-do [portal de aparência](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Settings.html)
-via `dbus-send` ou `gdbus`, com alternativas pelas configurações KDE/GNOME e
-`GTK_THEME` quando necessário. Alterações são verificadas em segundo plano.
-O botão de sol/lua permite uma escolha manual; o clique direito oferece
-**Seguir tema do sistema** para restaurar o acompanhamento automático.
-
-## Preparar FPC e Lazarus
+No Linux, conceda permissão de execução ao arquivo baixado:
 
 ```bash
+chmod +x ACBrInstall-linux-x86_64.AppImage
+./ACBrInstall-linux-x86_64.AppImage
+```
+
+Se FUSE não estiver disponível, acrescente `--appimage-extract-and-run`. Os AppImages usam a glibc de base do Ubuntu 22.04 e as bibliotecas gráficas do sistema.
+
+No macOS, o `.pkg` instala o aplicativo em `/Applications`. Os pacotes usam assinatura ad-hoc e ainda não possuem certificado Developer ID nem notarização Apple.
+
+## Uso
+
+1. **Prepare o ambiente**, se necessário, com o PascalInstall: escolha a pasta, as versões do FPC/Lazarus e os compiladores adicionais. O ambiente inclui OPM, AnchorDockingDsgn e DockedFormEditor.
+2. **Abra o ACBrInstall** e selecione a instalação do Lazarus ou Delphi.
+3. **Configure os fontes** usando a pasta que contém `Pacotes/Lazarus` ou `Pacotes/Delphi`.
+4. **Selecione os componentes**, confira o resumo e inicie a instalação. As dependências são resolvidas automaticamente; o log acompanha a execução.
+
+| Ação | Condição |
+|---|---|
+| **Apenas instalar** | Fontes locais existentes; não executa SVN. |
+| **Baixar e instalar** | Pasta nova ou vazia para checkout. |
+| **Atualizar e instalar** | Raiz de uma cópia SVN existente. |
+
+A opção **Baixar fontes para selecionar componentes** permite fazer somente o checkout antes de escolher os pacotes.
+
+No Lazarus, a seleção substitui os componentes ACBr registrados na IDE: os desmarcados são retirados da lista de instalação, preservando os demais pacotes de terceiros. Artefatos antigos da plataforma atual são guardados em `Lib/.acbrinstall-backup` antes da recompilação.
+
+### Dependências de relatórios
+
+- **FortesReport-CE e PowerPDF:** preparados pelo ACBrInstall via OPM quando exigidos pela seleção no Lazarus. Pacotes já registrados são reutilizados. No Delphi, o FortesReport-CE deve estar instalado previamente.
+- **FastReport:** integrações disponíveis, desmarcadas por padrão. Exigem uma cópia adquirida, instalada na IDE ou informada em **FastReport (opcional)**. O produto pago não é baixado pelo aplicativo. No Delphi, a pasta informada complementa os caminhos de compilação e não substitui sua instalação na IDE.
+
+Os aplicativos acompanham o tema do sistema e permitem alternar entre claro e escuro. No Linux, a interface registra ícones e atalhos no perfil do usuário, com suporte ao Wayland.
+
+## Requisitos
+
+Downloads exigem internet. Para baixar ou atualizar os fontes ACBr, disponibilize um cliente **SVN** de linha de comando. A instalação requer os compiladores da IDE selecionada.
+
+| Sistema | Preparação do ambiente Pascal |
+|---|---|
+| Linux | Compilador C, `make`, binutils, `unzip`, SVN e bibliotecas de desenvolvimento GTK2/X11. O PascalInstall verifica as dependências. |
+| Windows | Ferramentas preparadas pelo `fpclazup`; SVN no `PATH` para o ACBr, como as command line tools do TortoiseSVN. |
+| macOS | Command Line Tools do Xcode (`xcode-select --install`), `make`, `unzip` e `svn` no `PATH`. Lazarus usa Cocoa. |
+
+No Debian/Ubuntu, para compilar o FPC/Lazarus:
+
+```bash
+sudo apt install build-essential subversion unzip libgtk2.0-dev libx11-dev \
+  libgdk-pixbuf2.0-dev libcairo2-dev libpango1.0-dev libxtst-dev \
+  libatk1.0-dev libglib2.0-dev
+```
+
+Para Delphi, use uma instalação existente e feche a IDE antes de instalar componentes. O backend aceita compiladores XE2 ou posteriores; a compatibilidade de cada pacote depende dos fontes ACBr.
+
+## Linha de comando
+
+Sem argumentos, os executáveis abrem a interface gráfica. Os exemplos pressupõem comandos disponíveis no `PATH`; no Windows, use a extensão `.exe`.
+
+```bash
+# Preparar FPC/Lazarus com compiladores adicionais para Windows
 pascalinstall --cli --dir ~/lazarus_dev --fpc stable --laz stable --cross win32,win64
-# Somente configurar OPM e designer em um Lazarus existente
+
+# Configurar OPM e designer em um Lazarus existente
 pascalinstall --cli --dir ~/lazarus_dev --configure-ide
+
+# Consultar componentes dos fontes locais
+acbrinstall --cli --ide lazarus --acbr-dir ~/ACBr --default-acbr --list-components
+
+# Instalar componentes selecionados a partir dos fontes locais
+acbrinstall --cli --ide lazarus --dir ~/lazarus_dev --acbr-dir ~/ACBr \
+  --acbr-action install --acbr-packages ACBr_NFe,ACBr_Boleto
 ```
 
-O PascalInstall usa o CLI **fpclazup**, do repositório
-[Reiniero-fpcup](https://github.com/LongDirtyAnimAlf/Reiniero-fpcup).
-A consulta à API seleciona o binário conforme sistema e arquitetura. FPC e
-Lazarus podem usar `stable` ou tags oficiais de release, carregadas em segundo
-plano. No macOS, o bootstrap nativo usa `darwin` e o widgetset **Cocoa**.
-A primeira compilação pode demorar bastante.
+Para baixar ou atualizar antes de instalar, use `--acbr-action download` ou `--acbr-action update`. Os nomes de pacotes variam conforme a revisão do ACBr; consulte `--list-components`.
 
-O ambiente preparado inclui **Online Package Manager**, **AnchorDockingDsgn**
-e **DockedFormEditor**. O reparo `--configure-ide` preserva os componentes
-anteriormente instalados na IDE.
+| Opção | Função |
+|---|---|
+| `--cross ""` | Desativar compiladores adicionais no PascalInstall. |
+| `--list-environments` | Listar instalações detectadas pelo ACBrInstall. |
+| `--default-acbr` | Selecionar os componentes sem FastReport. |
+| `--all-acbr` | Selecionar todos, incluindo integrações FastReport. |
+| `--fastreport-dir <pasta>` | Informar uma cópia adquirida do FastReport. |
 
-### Dependências
-
-Linux: compilador C, make, binutils, SVN, unzip e bibliotecas de desenvolvimento
-GTK2/X11. O programa verifica os requisitos e informa o comando da distribuição.
-
-```bash
-# Debian/Ubuntu
-sudo apt install build-essential subversion unzip libgtk2.0-dev libx11-dev libgdk-pixbuf2.0-dev libcairo2-dev libpango1.0-dev libxtst-dev libatk1.0-dev libglib2.0-dev
-```
-
-Windows: o fpclazup pode preparar as ferramentas necessárias; para baixar ACBr,
-use um cliente SVN de linha de comando, como o incluído opcionalmente no
-TortoiseSVN.
-
-macOS: **Command Line Tools do Xcode** (`xcode-select --install`), `make`, `unzip`
-e cliente `svn` no PATH. Não são exigidas bibliotecas GTK2. O
-[Lazarus oficial](https://www.lazarus-ide.org/index.php?page=downloads) oferece
-versões para Intel e Apple Silicon.
-
-## Instalar ACBr no Lazarus
-
-A interface do ACBrInstall segue a organização do assistente original: **Bem-vindo**,
-**Ambiente**, **Configurações**, **Componentes**, **Instalação** e **Conclusão**.
-As etapas ficam na lateral, com navegação **Voltar/Próximo** no rodapé. A lista
-agrupa os pacotes por família, com busca, filtro e descrições. A etapa de instalação
-mostra um resumo antes de iniciar o build; depois apresenta o log e a conclusão.
-O visual usa a paleta compartilhada dos aplicativos e acompanha o tema do sistema.
-
-Selecione uma instalação existente detectada ou informe a pasta do ambiente
-criado pelo PascalInstall. Também são aceitas pastas que contêm `lazbuild`
-diretamente, como instalações oficiais de Lazarus.
-
-```bash
-acbrinstall --cli --dir ~/lazarus_dev --acbr-dir ~/ACBr --acbr-action install
-acbrinstall --cli --dir ~/lazarus_dev --acbr-dir ~/ACBr --acbr-action download
-acbrinstall --cli --dir ~/lazarus_dev --acbr-dir ~/ACBr --acbr-action update
-acbrinstall --cli --list-environments
-```
-
-**Apenas instalar** usa os fontes locais sem SVN. **Baixar e instalar** exige
-uma pasta nova/vazia; **Atualizar e instalar** exige uma cópia SVN existente.
-A pasta dos fontes contém `Pacotes/Lazarus` e/ou `Pacotes/Delphi`.
-
-A lista de componentes tem busca, famílias, checkboxes, **Marcar todos** e
-**Desmarcar todos**. Dependências são incluídas automaticamente e compiladas na
-ordem necessária. Em uma pasta nova, **Baixar fontes para selecionar componentes**
-faz somente o checkout e volta à lista antes de compilar.
-
-```bash
-acbrinstall --cli --acbr-dir ~/ACBr --acbr-action install --acbr-packages ACBr_NFe,ACBr_Boleto
-acbrinstall --cli --acbr-dir ~/ACBr --all-acbr --list-components
-acbrinstall --cli --acbr-dir ~/ACBr --default-acbr --acbr-action install
-# Para integrações FastReport, use sua instalação existente ou informe os fontes adquiridos
-acbrinstall --cli --acbr-dir ~/ACBr --acbr-packages ACBr_NFSeXDANFSeFR --fastreport-dir ~/FastReport
-```
-
-**FastReport permanece disponível**, desmarcado na seleção padrão. **Marcar todos**
-e `--all-acbr` incluem essas integrações; **Seleção padrão** e `--default-acbr`
-restauram os componentes que não exigem FastReport. Para usá-lo, instale sua cópia
-adquirida na IDE ou informe a pasta em **FastReport (opcional)** / `--fastreport-dir`.
-No Lazarus, essa pasta é pesquisada por `.lpk` e os pacotes são registrados e
-compilados antes do ACBr. O instalador não baixa o produto pago. Se uma integração
-selecionada exigir um pacote ausente, o build informa qual dependência instalar.
-
-O **FortesReport-CE** (`frce`) e o **PowerPDF** (`pack_powerpdf`) são preparados
-pelo catálogo oficial do [OPM](https://packages.lazarus-ide.org/) quando exigidos
-pelos componentes Lazarus selecionados. Pacotes já registrados são reutilizados;
-os downloads ficam em `<ambiente>/packages/opm`.
-Essa preparação pertence ao **ACBrInstall**. FortesReport-CE e PowerPDF não são
-instalados pelo PascalInstall ao preparar o Lazarus.
-
-Artefatos antigos da plataforma atual (`.ppu`, `.o`, `.a`, `.compiled`) são
-movidos para `Lib/.acbrinstall-backup` antes da recompilação. No Linux/macOS,
-caminhos de `.lpk` com capitalização incorreta são corrigidos quando existe uma
-correspondência inequívoca, com backup do original. Os fontes Pascal e os
-artefatos de outras plataformas são preservados. Os componentes ACBr desmarcados
-são retirados da lista de instalação da IDE, preservando os demais pacotes.
-
-## Instalar ACBr no Delphi — Windows
-
-O backend Delphi inicial lê os `.dpk` de `Pacotes/Delphi`, resolve dependências,
-compila os pacotes com os compiladores da instalação selecionada e registra os
-BPLs de design na IDE. A referência de comportamento é o instalador original
-em `Projetos/ACBrInstall Trunk2` dos fontes ACBr.
-
-- Detecta perfis Delphi/RAD Studio no registro do usuário (Embarcadero/CodeGear/Borland).
-- Suporta compiladores Delphi XE2 ou posteriores; cada componente ainda depende
-  da compatibilidade de seus fontes com a versão escolhida.
-- Compila Release/Win32; permite também Debug e bibliotecas Win64.
-- Instala na IDE de 32 bits e, opcionalmente, na IDE de 64 bits quando disponível.
-- Mantém DCU/DCP/BPL separados por versão, plataforma e modo.
-- Faz backup `.reg` antes de alterar Known Packages e caminhos da IDE.
-- Preserva os pacotes de terceiros e permite selecionar integrações FastReport.
+Exemplo para Delphi no PowerShell, ajustando o caminho à instalação local:
 
 ```powershell
-acbrinstall.exe --cli --ide delphi --list-environments
-acbrinstall.exe --cli --ide delphi --delphi-dir 'C:\Program Files (x86)\Embarcadero\Studio\23.0' --acbr-dir C:\ACBr --acbr-action install --acbr-packages ACBr_NFe,DCLACBr_NFe
+acbrinstall.exe --cli --ide delphi `
+  --delphi-dir 'C:\Program Files (x86)\Embarcadero\Studio\23.0' `
+  --acbr-dir C:\ACBr --acbr-action install `
+  --acbr-packages ACBr_NFe,DCLACBr_NFe
 ```
 
-A versão detectada fornece a chave do registro; também pode ser informada por
-`--delphi-key 'HKCU\Software\Embarcadero\BDS\23.0'`. Use `--win64`, `--debug` e
-`--ide64` conforme necessário. Feche o Delphi durante a instalação.
-Relatórios Fortes exigem **FortesReport-CE já instalado no Delphi**; o catálogo
-OPM é utilizado apenas pelo backend Lazarus. FastReport exige uma cópia adquirida
-compatível com a versão e plataforma do Delphi, com seus DCP/BPL nos caminhos da
-IDE. A pasta opcional `--fastreport-dir` acrescenta caminhos de compilação;
-subpastas `Win32/Release`, `Win64/Release` e os equivalentes `Debug` têm prioridade
-sobre a raiz. Ela não substitui a instalação do FastReport no Delphi.
+As opções Delphi incluem `--win64`, `--debug`, `--ide64` e `--delphi-key`. Consulte `acbrinstall --help` ou `pascalinstall --help` para a referência completa; `--version` exibe a versão.
 
-A migração do instalador original é gradual: cópia de DLLs, opções específicas
-para C++Builder, edição de defines do `ACBr.inc` e outros ajustes avançados do
-instalador Delphi original ainda não estão disponíveis nesta interface.
-A cópia de DLLs, quando migrada, será exclusiva do Windows, inclusive para
-Lazarus nesse sistema. Linux e macOS não terão essa opção nem executarão essa etapa.
+A CLI restaura as últimas opções salvas. Em scripts, informe explicitamente ambiente, ação e seleção para obter o comportamento desejado.
 
-## Configurações
+## Configurações e logs
 
-### Logs de instalação
+Cada aplicativo salva suas opções ao iniciar a operação e gera um log completo por execução. **Salvar log** exporta uma cópia, inclusive durante a instalação.
 
-Os dois aplicativos salvam automaticamente um arquivo completo por instalação,
-reparo ou download de fontes, tanto na interface quanto na CLI. O log inclui
-saída dos processos, mensagens de erro e informações da versão. O caminho aparece
-no acompanhamento; **Salvar log** permite exportar uma cópia, inclusive durante
-o build. Nesse caso, a cópia contém o conteúdo disponível naquele momento.
-
-| Sistema | Pasta dos logs |
-|---|---|
-| Linux | `~/.local/state/acbrinstall/logs` ou `~/.local/state/pascalinstall/logs` (`XDG_STATE_HOME` é respeitado) |
-| Windows | `%LOCALAPPDATA%\ACBrInstall\logs` ou `%LOCALAPPDATA%\PascalInstall\logs` |
-| macOS | `~/Library/Logs/ACBrInstall` ou `~/Library/Logs/PascalInstall` |
-
-A interface limita o histórico visível para manter a fluidez; o arquivo e sua
-exportação preservam o log completo. Ajuda, versão e listagens da CLI não criam
-logs. Se a pasta não puder ser gravada, a instalação continua com um aviso.
-
-### Últimas opções
-
-Cada programa salva as últimas opções ao iniciar seu build, inclusive se falhar:
-
-| Sistema | ACBrInstall | PascalInstall |
+| Sistema | Configuração | Logs |
 |---|---|---|
-| Linux | `~/.config/acbrinstall/config.json` | `~/.config/pascalinstall/config.json` |
-| Windows | `%APPDATA%\ACBrInstall\config.json` | `%APPDATA%\PascalInstall\config.json` |
-| macOS | `~/Library/Application Support/ACBrInstall/config.json` | `~/Library/Application Support/PascalInstall/config.json` |
+| Linux | `~/.config/<app>/config.json` | `~/.local/state/<app>/logs` |
+| Windows | `%APPDATA%\<App>\config.json` | `%LOCALAPPDATA%\<App>\logs` |
+| macOS | `~/Library/Application Support/<App>/config.json` | `~/Library/Logs/<App>` |
 
-No Linux, `XDG_CONFIG_HOME` substitui `~/.config`. Argumentos explícitos da CLI
-sobrescrevem os valores restaurados. O arquivo antigo do instalador combinado
-continua compatível: os campos de FPC/Lazarus são migrados para o PascalInstall
-antes de o ACBrInstall salvar seu formato independente. A seleção ACBr usa
-`acbr_packages`: `null` usa a seleção padrão; uma lista contém os nomes escolhidos.
-`all_components: true` com seleção `null` inclui também FastReport.
-`fastreport_dir` guarda a pasta opcional do produto adquirido.
-`ide` distingue `lazarus` e `delphi`.
+Substitua `<app>` por `acbrinstall` ou `pascalinstall`; `<App>`, por `ACBrInstall` ou `PascalInstall`. No Linux, `XDG_CONFIG_HOME` e `XDG_STATE_HOME` são respeitados. No Windows, os logs usam `APPDATA` se `LOCALAPPDATA` não estiver disponível.
 
-## Ícones
+## Limitações atuais
 
-O ACBrInstall usa o ícone do instalador Delphi original. O PascalInstall usa um
-ícone próprio, com a letra P e uma seta de instalação. Ambos são incorporados à
-janela, ao executável Windows e aos pacotes de distribuição. Os arquivos, a
-origem e o prompt do ícone gerado estão em [assets/README.md](assets/README.md).
+A migração do instalador Delphi original é gradual. Cópia de DLLs, opções específicas para C++Builder e edição de defines do `ACBr.inc` ainda não estão disponíveis. A cópia de DLLs será exclusiva do Windows.
 
-No Linux, a primeira abertura da interface registra o arquivo `.desktop` e o
-ícone em `~/.local/share/applications` e `~/.local/share/icons` (ou em
-`XDG_DATA_HOME`). O identificador Wayland corresponde ao nome desse arquivo:
-`dev.rftd.acbrinstall` / `dev.rftd.pascalinstall`. Isso permite ao ambiente gráfico
-encontrar os ícones da barra de tarefas e da decoração da janela. Ao executar um
-AppImage, o atalho aponta para o arquivo original, e não para a montagem temporária.
-Os comandos de CLI não registram atalhos.
+A instalação foi validada localmente no Linux. Os builds e testes cobrem as plataformas distribuídas, mas a instalação completa com Delphi e em macOS ainda precisa de validação nesses sistemas.
 
-## Validação e releases
+## Desenvolvimento
 
-O GitHub Actions testa o workspace e gera **os dois programas** para Linux
-x86-64, Windows x86-64, macOS Intel e macOS Apple Silicon:
-
-- Linux: executáveis e **AppImage** por programa.
-- Windows: executáveis `.exe` com seus ícones incorporados.
-- macOS: aplicativos `.app` em ZIP e instaladores `.pkg` para `/Applications`,
-  em builds separados para Intel e Apple Silicon.
-
-O workflow executa builds e testes em **todo push**, em qualquer branch ou tag,
-e nos **pull requests** ao abrir, reabrir ou atualizar os commits. Os instaladores
-ficam disponíveis como artefatos da execução no GitHub Actions.
-
-Ao **publicar uma release**, o workflow compila e testa a tag correspondente nas
-quatro plataformas. Depois que todos os builds passam, baixa os artefatos dessa
-execução e os anexa à release publicada. Isso também vale para pré-releases;
-criar apenas uma tag não publica uma release automaticamente.
-
-Os runners macOS usados seguem o catálogo de
-[imagens oficiais do GitHub](https://github.com/actions/runner-images).
-
-O script [scripts/package.py](scripts/package.py) empacota os dois aplicativos,
-inclui os ícones e testa a CLI de cada pacote. No Linux, usa releases fixos do
-[appimagetool](https://github.com/AppImage/appimagetool) e runtime, com SHA256
-verificado; não exige FUSE durante o build. Os AppImages usam a glibc de base do
-Ubuntu 22.04 e as bibliotecas gráficas do sistema. No macOS, usa `codesign` ad-hoc,
-`ditto` e `pkgbuild`; os pacotes ainda não têm certificado Developer ID nem
-notarização Apple.
+Use Rust estável e Cargo. No Windows, o toolchain MSVC exige ferramentas C++ e Windows SDK; no macOS, use os Command Line Tools do Xcode. Para compilar a interface Rust no Debian/Ubuntu:
 
 ```bash
-cargo build --workspace --release --locked
-python3 scripts/package.py --platform linux-x86_64
-# No macOS, escolha macos-x86_64 ou macos-aarch64 conforme o build nativo
-python3 scripts/package.py --platform macos-aarch64
-# Inspecionar apenas AppDir/.app, sem ferramentas nativas de empacotamento
-python3 scripts/package.py --platform macos-aarch64 --bundle-only
+sudo apt install build-essential libxkbcommon-dev libwayland-dev libx11-dev \
+  libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
 ```
 
-A validação local é feita no Linux. A instalação real com Delphi e a execução em
-macOS exigem validação nesses sistemas; compilar/testar em CI não substitui esse
-teste de instalação com uma IDE real.
+```bash
+git clone https://github.com/rftd/ACBrInstall.git
+cd ACBrInstall
+cargo fmt --all --check
+cargo test --workspace --locked
+cargo build --workspace --release --locked
+
+# Executar a interface durante o desenvolvimento
+cargo run -p acbrinstall
+cargo run -p pascalinstall
+```
+
+Os executáveis ficam em `target/release/`. O workspace contém os aplicativos em `apps/`, os backends e a infraestrutura em `crates/install-core/` e a interface em `crates/install-ui/`.
+
+O [script de empacotamento](scripts/package.py) exige Python 3 e deve ser executado no sistema de destino após o build release:
+
+```bash
+python3 scripts/package.py --platform linux-x86_64
+# No macOS: --platform macos-x86_64 ou --platform macos-aarch64
+```
+
+Os pacotes são gerados em `dist/`. O [workflow](.github/workflows/build.yml) testa e compila os dois aplicativos em cada push e pull request. Ao publicar uma release, compila a tag nas quatro plataformas da matriz e anexa os arquivos após todos os builds passarem.
+
+## Contribuição e licença
+
+Abra uma [issue](https://github.com/rftd/ACBrInstall/issues) com versão, sistema, arquitetura, IDE, passos para reproduzir e log sem dados sensíveis. Para pull requests, descreva a alteração e a validação realizada; execute a formatação e os testes antes do envio.
+
+**Autor:** Rafael Teno DIas · **Licença:** [MIT](LICENSE).
+
+O projeto utiliza os fontes ACBr, o [fpclazup](https://github.com/LongDirtyAnimAlf/Reiniero-fpcup) e o [catálogo OPM](https://packages.lazarus-ide.org/). O ícone do ACBrInstall pertence ao Projeto ACBr; a origem dos recursos está em [assets/README.md](assets/README.md). Componentes e recursos de terceiros mantêm suas respectivas licenças.
