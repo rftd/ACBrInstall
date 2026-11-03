@@ -128,6 +128,8 @@ As opções Delphi incluem `--win64`, `--debug`, `--ide64` e `--delphi-key`. Con
 
 A CLI restaura as últimas opções salvas. Em scripts, informe explicitamente ambiente, ação e seleção para obter o comportamento desejado.
 
+Para preparar ambientes de CI ou Docker, ambos aceitam `--build-only` no fluxo Lazarus. O PascalInstall prepara FPC/Lazarus sem adicionar OPM e designer à IDE; o ACBrInstall registra e compila os pacotes e dependências sem alterar os componentes instalados na IDE. Falhas na preparação de cross-compilers interrompem a operação.
+
 ## Configurações e logs
 
 Cada aplicativo salva suas opções ao iniciar a operação e gera um log completo por execução. **Salvar log** exporta uma cópia, inclusive durante a instalação.

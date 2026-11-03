@@ -147,7 +147,12 @@ fn baixar_fpcup(ctx: &Ctx, dir: &Path) -> Result<PathBuf> {
     Ok(dest)
 }
 
-fn instalar_fpc_lazarus(ctx: &Ctx, fpcup: &Path, cfg: &PascalConfig) -> Result<()> {
+fn instalar_fpc_lazarus(
+    ctx: &Ctx,
+    fpcup: &Path,
+    cfg: &PascalConfig,
+    configure_ide: bool,
+) -> Result<()> {
     ctx.step("Instalando FPC + Lazarus (pode demorar bastante)");
     let mut args = vec![
         format!("--installdir={}", cfg.base.display()),
@@ -158,6 +163,10 @@ fn instalar_fpc_lazarus(ctx: &Ctx, fpcup: &Path, cfg: &PascalConfig) -> Result<(
     ];
     if cfg!(target_os = "macos") {
         args.push("--lclplatform=cocoa".into());
+    }
+    if !configure_ide {
+        // The default fpclazup sequence also builds help and suggested packages.
+        args.push("--only=FPC,Lazarus".into());
     }
     ctx.run(fpcup, &args, None, true)?;
     Ok(())
@@ -180,12 +189,8 @@ fn instalar_cross(ctx: &Ctx, fpcup: &Path, cfg: &PascalConfig) -> Result<()> {
             "--noconfirm".into(),
             "--verbose".into(),
         ];
-        let rc = ctx.run(fpcup, &args, None, false)?;
-        if rc != 0 {
-            ctx.say(format!(
-                "AVISO: cross {nome} terminou com código {rc} (veja o log acima)"
-            ));
-        }
+        ctx.run(fpcup, &args, None, true)
+            .with_context(|| format!("instalando cross-compiler {nome}"))?;
     }
     Ok(())
 }
@@ -224,6 +229,15 @@ pub fn configurar_ide(ctx: &Ctx, base: &Path) -> Result<()> {
 }
 
 pub fn executar(cfg: &PascalConfig, ctx: &Ctx) -> Result<()> {
+    executar_modo(cfg, ctx, true)
+}
+
+/// Prepara compiladores e Lazarus sem adicionar OPM/designer à IDE.
+pub fn preparar_compilacao(cfg: &PascalConfig, ctx: &Ctx) -> Result<()> {
+    executar_modo(cfg, ctx, false)
+}
+
+fn executar_modo(cfg: &PascalConfig, ctx: &Ctx, configure_ide: bool) -> Result<()> {
     crate::platform::fpcup_asset(std::env::consts::OS, std::env::consts::ARCH)?;
     for target in &cfg.cross {
         if !CROSS.iter().any(|(id, _, _)| *id == target) {
@@ -248,13 +262,47 @@ pub fn executar(cfg: &PascalConfig, ctx: &Ctx) -> Result<()> {
         ctx.run("xcrun", &["--find".into(), "clang".into()], None, true)?;
     }
     let bootstrap = baixar_fpcup(ctx, &cfg.base.join("_fpcup"))?;
-    instalar_fpc_lazarus(ctx, &bootstrap, cfg)?;
+    instalar_fpc_lazarus(ctx, &bootstrap, cfg, configure_ide)?;
     instalar_cross(ctx, &bootstrap, cfg)?;
-    configurar_ide(ctx, &cfg.base)?;
+    if configure_ide {
+        configurar_ide(ctx, &cfg.base)?;
+    }
     ctx.step("Concluído");
     ctx.say(format!(
         "Ambiente Pascal pronto em {}. Use ACBrInstall para instalar os componentes.",
         cfg.base.display()
     ));
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::{os::unix::fs::PermissionsExt, sync::Arc};
+
+    #[test]
+    fn cross_compiler_failure_stops_the_build() {
+        let root = std::env::temp_dir().join(format!(
+            "pascal-cross-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let bootstrap = root.join("bootstrap");
+        fs::write(&bootstrap, "#!/bin/sh\nexit 29\n").unwrap();
+        fs::set_permissions(&bootstrap, fs::Permissions::from_mode(0o755)).unwrap();
+        let cfg = PascalConfig {
+            base: root.clone(),
+            cross: vec!["win32".into(), "win64".into()],
+            ..PascalConfig::default()
+        };
+        let ctx = Ctx::new(Arc::new(|_| {}));
+        let error = instalar_cross(&ctx, &bootstrap, &cfg).unwrap_err();
+        let error = format!("{error:#}");
+        assert!(error.contains("cross-compiler win32") && error.contains("código 29"));
+        fs::remove_dir_all(root).unwrap();
+    }
 }

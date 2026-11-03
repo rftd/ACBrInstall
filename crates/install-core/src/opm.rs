@@ -120,6 +120,7 @@ pub fn preparar_dependencias(
     lazbuild: &Path,
     packages: &[PathBuf],
     fastreport_dir: Option<&Path>,
+    install_ide: bool,
 ) -> Result<Vec<PathBuf>> {
     // O FastReport só usa fontes/links existentes: não passa pelo catálogo OPM.
     let mut prepared = preparar_fastreport(ctx, pcp, lazbuild, packages, fastreport_dir)?;
@@ -132,7 +133,7 @@ pub fn preparar_dependencias(
             prepared.push(preparar_pacote(ctx, base, pcp, lazbuild, name, label)?);
         }
     }
-    if !prepared.is_empty() {
+    if install_ide && !prepared.is_empty() {
         let mut args = vec![
             format!("--pcp={}", pcp.display()),
             "--add-package".into(),

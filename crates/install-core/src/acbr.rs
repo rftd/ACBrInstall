@@ -204,6 +204,10 @@ fn preparar_recompilacao_acbr(ctx: &Ctx, acbr: &Path) -> Result<()> {
 }
 
 fn instalar_acbr(ctx: &Ctx, cfg: &Config, acbr: &Path) -> Result<()> {
+    instalar_acbr_modo(ctx, cfg, acbr, true)
+}
+
+fn instalar_acbr_modo(ctx: &Ctx, cfg: &Config, acbr: &Path, install_ide: bool) -> Result<()> {
     let base = &cfg.base;
     ctx.step("Instalando pacotes ACBr no Lazarus");
     let lazbuild = crate::platform::lazbuild(base);
@@ -246,6 +250,7 @@ fn instalar_acbr(ctx: &Ctx, cfg: &Config, acbr: &Path) -> Result<()> {
         &lazbuild,
         &lpks,
         cfg.fastreport_dir.as_deref(),
+        install_ide,
     )?;
 
     // 1) registra todos os pacotes (links) para resolver dependências
@@ -263,6 +268,10 @@ fn instalar_acbr(ctx: &Ctx, cfg: &Config, acbr: &Path) -> Result<()> {
     for l in &lpks {
         ctx.run(&lazbuild, &[pcp_arg.clone(), s(l)], None, true)
             .with_context(|| format!("compilando pacote {}", l.display()))?;
+    }
+    if !install_ide {
+        ctx.say("Pacotes ACBr compilados e registrados para uso pelo lazbuild.");
+        return Ok(());
     }
     // 3) instala na IDE os pacotes de design-time e recompila a IDE
     let instalar: Vec<String> = lpks
@@ -288,6 +297,18 @@ fn instalar_acbr(ctx: &Ctx, cfg: &Config, acbr: &Path) -> Result<()> {
 }
 
 pub fn executar(cfg: &Config, ctx: &Ctx) -> Result<()> {
+    executar_modo(cfg, ctx, true)
+}
+
+/// Registra e compila pacotes/dependências sem alterar a seleção instalada na IDE.
+pub fn preparar_compilacao(cfg: &Config, ctx: &Ctx) -> Result<()> {
+    executar_modo(cfg, ctx, false)
+}
+
+fn executar_modo(cfg: &Config, ctx: &Ctx, install_ide: bool) -> Result<()> {
+    if !install_ide && cfg.ide != crate::config::Ide::Lazarus {
+        bail!("--build-only está disponível somente para Lazarus.");
+    }
     if cfg.ide == crate::config::Ide::Delphi && !cfg!(windows) {
         bail!("A instalação para Delphi está disponível somente no Windows.");
     }
@@ -314,11 +335,21 @@ pub fn executar(cfg: &Config, ctx: &Ctx) -> Result<()> {
     ctx.say(format!("Fontes do ACBr: {}", destination.display()));
     let acbr = preparar_acbr(ctx, &cfg.base, &destination, cfg.acbr_action)?;
     match cfg.ide {
-        crate::config::Ide::Lazarus => instalar_acbr(ctx, cfg, &acbr)?,
+        crate::config::Ide::Lazarus => {
+            if install_ide {
+                instalar_acbr(ctx, cfg, &acbr)?;
+            } else {
+                instalar_acbr_modo(ctx, cfg, &acbr, false)?;
+            }
+        }
         crate::config::Ide::Delphi => crate::delphi::install(ctx, cfg, &acbr)?,
     }
     ctx.step("Concluído");
-    ctx.say("Componentes ACBr instalados. Reabra sua IDE.");
+    if install_ide {
+        ctx.say("Componentes ACBr instalados. Reabra sua IDE.");
+    } else {
+        ctx.say("Ambiente ACBr pronto para compilação.");
+    }
     Ok(())
 }
 
@@ -438,6 +469,47 @@ mod tests {
         }
         preparar_recompilacao_acbr(&ctx, &fixture.0).unwrap();
         assert_eq!(fs::read_dir(backups).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn build_only_does_not_rebuild_or_change_installed_ide_packages() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = Sources::new();
+        let base = fixture.0.join("environment");
+        let sources = fixture.0.join("sources");
+        let packages = sources.join("Pacotes/Lazarus");
+        let pcp = base.join("config_lazarus");
+        fs::create_dir_all(&packages).unwrap();
+        fs::create_dir_all(base.join("lazarus")).unwrap();
+        fs::create_dir_all(&pcp).unwrap();
+        fs::write(
+            packages.join("Test.lpk"),
+            r#"<CONFIG><Package><Name Value="Test"/><Type Value="DesignTime"/></Package></CONFIG>"#,
+        )
+        .unwrap();
+        let installed = pcp.join("staticpackages.inc");
+        fs::write(&installed, "existing packages").unwrap();
+        let tool = base.join("lazarus/lazbuild");
+        fs::write(
+            &tool,
+            r#"#!/bin/sh
+for arg in "$@"; do
+  case "$arg" in --build-ide*|--add-package) exit 77;; esac
+done
+exit 0
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+        let cfg = Config {
+            base,
+            ..Config::default()
+        };
+        let ctx = Ctx::new(Arc::new(|_| {}));
+        instalar_acbr_modo(&ctx, &cfg, &sources, false).unwrap();
+        assert_eq!(fs::read_to_string(installed).unwrap(), "existing packages");
+        assert!(!pcp.join("miscellaneousoptions.xml").exists());
     }
 
     #[cfg(unix)]

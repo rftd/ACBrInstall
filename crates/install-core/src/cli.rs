@@ -16,10 +16,11 @@ pub struct Options {
     pub list: bool,
     pub environments: bool,
     pub configure_only: bool,
+    pub build_only: bool,
 }
 
 pub fn help(product: Product) -> String {
-    let common="Sem argumentos abre a interface gráfica.\n--cli               modo texto\n--dir <pasta>       ambiente Pascal/Lazarus\n-V, --version       mostra a versão\n-h, --help          mostra esta ajuda\n";
+    let common="Sem argumentos abre a interface gráfica.\n--cli               modo texto\n--dir <pasta>       ambiente Pascal/Lazarus\n--build-only        prepara o ambiente de compilação sem adicionar componentes à IDE (Lazarus)\n-V, --version       mostra a versão\n-h, --help          mostra esta ajuda\n";
     let specific=match product {
         Product::Pascal => "--fpc <versão>      versão do FPC (stable por padrão)\n--laz <versão>      versão do Lazarus\n--cross <lista>     win32,win64,linux32,linux64 (vazio desativa)\n--configure-ide     instala OPM e designer no Lazarus existente, sem baixar FPC\n",
         Product::Acbr => "--ide <alvo>        lazarus ou delphi (Delphi somente Windows)\n--acbr-dir <pasta>  raiz dos fontes ACBr\n--acbr-action <ação> install, download ou update\n--acbr-packages <lista> nomes de pacotes separados por vírgula\n--all-acbr          todos os pacotes, incluindo FastReport\n--default-acbr      seleção padrão, sem FastReport\n--fastreport-dir <pasta> FastReport já adquirido (opcional)\n--list-components  lista os pacotes sem compilar\n--list-environments lista instalações detectadas\n--delphi-dir <pasta> raiz de uma instalação Delphi\n--delphi-key <chave> perfil HKCU\\Software\\Embarcadero\\BDS\\<versão>\n--win64            compila também bibliotecas Delphi Win64\n--debug            compila também bibliotecas Delphi Debug\n--ide64            instala componentes também na IDE Delphi de 64 bits\n",
@@ -34,6 +35,7 @@ fn parse(
     mut pascal: PascalConfig,
 ) -> Result<Options> {
     let (mut list, mut environments, mut configure_only) = (false, false, false);
+    let mut build_only = false;
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
@@ -47,6 +49,7 @@ fn parse(
         };
         match (product, arg.as_str()) {
             (_, "--cli") => {}
+            (_, "--build-only") => build_only = true,
             (Product::Pascal, "--dir") => pascal.base = PathBuf::from(value()?),
             (Product::Acbr, "--dir") => acbr.base = PathBuf::from(value()?),
             (Product::Pascal, "--fpc") => pascal.fpc = value()?,
@@ -113,6 +116,12 @@ fn parse(
         }
         i += 1;
     }
+    if build_only && configure_only {
+        bail!("--build-only e --configure-ide não podem ser usados juntos.");
+    }
+    if build_only && product == Product::Acbr && acbr.ide == Ide::Delphi {
+        bail!("--build-only está disponível somente para Lazarus.");
+    }
     Ok(Options {
         request: if product == Product::Acbr {
             Request::Acbr(acbr)
@@ -122,6 +131,7 @@ fn parse(
         list,
         environments,
         configure_only,
+        build_only,
     })
 }
 
@@ -173,6 +183,8 @@ fn execute(product: Product, args: &[String]) -> Result<()> {
                 crate::pascal::configurar_ide(&ctx, &cfg.base)?;
                 ctx.say("OPM e designer integrado configurados. Reabra o Lazarus.");
                 Ok(())
+            } else if options.build_only {
+                crate::pascal::preparar_compilacao(&cfg, &ctx)
             } else {
                 crate::pascal::executar(&cfg, &ctx)
             }
@@ -231,7 +243,11 @@ fn execute(product: Product, args: &[String]) -> Result<()> {
                     cfg.delphi.registry_key = i.registry_key.clone();
                 }
             }
-            crate::acbr::executar(&cfg, &ctx)
+            if options.build_only {
+                crate::acbr::preparar_compilacao(&cfg, &ctx)
+            } else {
+                crate::acbr::executar(&cfg, &ctx)
+            }
         }
     })();
     if let Err(error) = &result {
@@ -245,6 +261,33 @@ mod tests {
     use super::*;
     fn args(s: &[&str]) -> Vec<String> {
         s.iter().map(|s| s.to_string()).collect()
+    }
+    #[test]
+    fn build_only_is_explicit_and_rejects_incompatible_options() {
+        for product in [Product::Acbr, Product::Pascal] {
+            let result = parse(
+                product,
+                &args(&["--build-only"]),
+                AcbrConfig::default(),
+                PascalConfig::default(),
+            )
+            .unwrap();
+            assert!(result.build_only);
+        }
+        assert!(parse(
+            Product::Pascal,
+            &args(&["--build-only", "--configure-ide"]),
+            AcbrConfig::default(),
+            PascalConfig::default()
+        )
+        .is_err());
+        assert!(parse(
+            Product::Acbr,
+            &args(&["--build-only", "--ide", "delphi"]),
+            AcbrConfig::default(),
+            PascalConfig::default()
+        )
+        .is_err());
     }
     #[test]
     fn programs_reject_each_others_installation_options() {
